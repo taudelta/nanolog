@@ -10,7 +10,8 @@ import (
 	"strings"
 )
 
-// LogLevel determine level of logging
+// LogLevel determines the level of logging (priority)
+// Separate loggers exists for all types of log levels
 type LogLevel string
 
 const (
@@ -37,10 +38,10 @@ var (
 	ERROR   *Logger
 	FATAL   *Logger
 
-	DebugColor string = fmt.Sprintf("\x1b[%dm", defaultDebugColor)
-	InfoColor  string = fmt.Sprintf("\x1b[%dm", defaultInfoColor)
-	WarnColor  string = fmt.Sprintf("\x1b[%dm", defaultWarnColor)
-	ErrorColor string = fmt.Sprintf("\x1b[%dm", defaultErrorColor)
+	DebugColor int = defaultDebugColor
+	InfoColor  int = defaultInfoColor
+	WarnColor  int = defaultWarnColor
+	ErrorColor int = defaultErrorColor
 )
 
 // Logger wrapper for standart log.Logger
@@ -89,7 +90,7 @@ func ParseLevel(str string) LogLevel {
 	}[logLevel]
 }
 
-// LoggingOptions provide basic options for tuning logging
+// Options provide basic options for tuning logging
 type Options struct {
 	Level LogLevel
 	Debug io.Writer
@@ -99,11 +100,18 @@ type Options struct {
 	Fatal io.Writer
 }
 
-func format(colorCode string, level LogLevel) string {
-	if colorCode == "" {
+func format(colorCode int, level LogLevel) string {
+	if colorCode == 0 {
 		return string(level)
 	}
-	return colorCode + string(level) + "\x1b[m"
+	return fmt.Sprintf("\x1b[%dm", colorCode) + string(level) + "\x1b[m"
+}
+
+func NoColor() {
+	DebugColor = 0
+	InfoColor = 0
+	WarnColor = 0
+	ErrorColor = 0
 }
 
 // Init initialize default loggers
@@ -114,66 +122,61 @@ func Init(opts Options) {
 	}
 
 	if runtime.GOOS != "linux" && runtime.GOOS != "darwin" {
-		DebugColor = ""
-		InfoColor = ""
-		WarnColor = ""
-		ErrorColor = ""
+		NoColor()
 	}
 
-	logPriority := map[LogLevel]int{
-		DebugLevel: 1,
-		InfoLevel:  2,
-		WarnLevel:  3,
-		ErrorLevel: 4,
-		FatalLevel: 5,
+	type options struct {
+		priority      int
+		color         int
+		writer        io.Writer
+		defaultWriter io.Writer
 	}
 
-	lvlPriority := logPriority[opts.Level]
+	params := map[LogLevel]options{
+		DebugLevel: {
+			priority:      1,
+			color:         DebugColor,
+			writer:        opts.Debug,
+			defaultWriter: os.Stdout,
+		},
+		InfoLevel: {
+			priority:      2,
+			color:         InfoColor,
+			writer:        opts.Info,
+			defaultWriter: os.Stdout,
+		},
+		WarnLevel: {
+			priority:      3,
+			color:         WarnColor,
+			writer:        opts.Warn,
+			defaultWriter: os.Stdout,
+		},
+		ErrorLevel: {
+			priority:      4,
+			color:         ErrorColor,
+			writer:        opts.Error,
+			defaultWriter: os.Stderr,
+		},
+		FatalLevel: {
+			priority:      5,
+			color:         ErrorColor,
+			writer:        opts.Fatal,
+			defaultWriter: os.Stderr,
+		},
+	}
 
-	for lvl, priority := range logPriority {
+	lvlPriority := params[opts.Level].priority
 
-		var writer io.Writer
-		var color string
-
+	for lvl, cfg := range params {
 		loggers[lvl] = New(lvl, ioutil.Discard, "", log.LstdFlags)
-
-		if priority < lvlPriority {
+		if cfg.priority < lvlPriority {
 			continue
 		}
-
-		switch lvl {
-		case DebugLevel:
-			writer = opts.Debug
-			if writer == nil {
-				writer = os.Stdout
-			}
-			color = DebugColor
-		case InfoLevel:
-			writer = opts.Info
-			if writer == nil {
-				writer = os.Stdout
-			}
-			color = InfoColor
-		case WarnLevel:
-			writer = opts.Warn
-			if writer == nil {
-				writer = os.Stdout
-			}
-			color = WarnColor
-		case ErrorLevel:
-			writer = opts.Error
-			if writer == nil {
-				writer = os.Stderr
-			}
-			color = ErrorColor
-		case FatalLevel:
-			writer = opts.Fatal
-			if writer == nil {
-				writer = os.Stderr
-			}
-			color = ErrorColor
+		writer := cfg.writer
+		if writer == nil {
+			writer = cfg.defaultWriter
 		}
-		loggers[lvl] = New(lvl, writer, fmt.Sprintf("[%v] ", format(color, lvl)), log.LstdFlags)
+		loggers[lvl] = New(lvl, writer, fmt.Sprintf("[%v] ", format(cfg.color, lvl)), log.LstdFlags)
 	}
 
 	DEBUG = loggers[DebugLevel]
