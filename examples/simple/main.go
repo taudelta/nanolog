@@ -1,20 +1,24 @@
 package main
 
 import (
-	log "github.com/stanyx/nanolog"
+	log "github.com/taudelta/nanolog"
 )
 
 func main() {
 
 	log.Init(log.Options{
 		Level: log.DebugLevel,
+		Debug: log.LoggerOptions{
+			Prefix: "%v> ",
+			Flags:  log.LstdFlags | log.Llongfile,
+		},
 	})
 
-	log.DEBUG.Println("debug")
-	log.INFO.Println("info")
-	log.WARN.Println("warn")
-	log.ERROR.Println("error")
-	log.FATAL.Println("fatal")
+	log.Debug().Println("debug")
+	log.Info().Println("info")
+	log.Warn().Println("warn")
+	log.Error().Println("error")
+	log.Fatal().Println("fatal")
 
 	log.Log(log.DebugLevel, "not showed")
 }
