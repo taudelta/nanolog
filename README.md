@@ -6,16 +6,21 @@ Simple minimalistic logging package with log level capability and colored output
 
 ```go
 import (
+  "os"
   log "github.com/stanyx/nanolog"
 )
 
 func main() {
 
   log.Init(log.Options{
-    Level: log.DebugLevel
+    Level: log.DebugLevel,
+    // example of overriding default writer
+    Debug: log.LoggerOptions{
+      Writer: os.Stdout,
+    }
   })
 
-  log.DEBUG.Println("debug message")
+  log.Debug().Println("debug message")
 
 }
 ```

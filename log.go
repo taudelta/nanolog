@@ -8,11 +8,23 @@ import (
 	"os"
 	"runtime"
 	"strings"
+	"sync"
 )
 
 // LogLevel determines the level of logging (priority)
 // Separate loggers exists for all types of log levels
 type LogLevel string
+
+// passthrough constants from standart log package
+const (
+	Ldate         = log.Ldate
+	Ltime         = log.Ltime
+	Lmicroseconds = log.Lmicroseconds
+	Llongfile     = log.Llongfile
+	Lshortfile    = log.Lshortfile
+	LUTC          = log.LUTC
+	LstdFlags     = log.LstdFlags
+)
 
 const (
 	DebugLevel      LogLevel = "DEBUG"
@@ -21,6 +33,8 @@ const (
 	ErrorLevel      LogLevel = "ERROR"
 	FatalLevel      LogLevel = "FATAL"
 	DefaultLogLevel          = ErrorLevel
+	DefaultPrefix            = "[%v] "
+	DefaultFlags             = log.LstdFlags
 )
 
 const (
@@ -31,18 +45,14 @@ const (
 )
 
 var (
-	loggers = map[LogLevel]*Logger{}
-	DEBUG   *Logger
-	INFO    *Logger
-	WARN    *Logger
-	ERROR   *Logger
-	FATAL   *Logger
-
 	DebugColor int = defaultDebugColor
 	InfoColor  int = defaultInfoColor
 	WarnColor  int = defaultWarnColor
 	ErrorColor int = defaultErrorColor
 )
+
+var mutex = &sync.Mutex{}
+var loggers = createLoggers(Options{Level: DefaultLogLevel})
 
 // Logger wrapper for standart log.Logger
 type Logger struct {
@@ -90,14 +100,29 @@ func ParseLevel(str string) LogLevel {
 	}[logLevel]
 }
 
+type LoggerOptions struct {
+	Writer io.Writer
+	Color  int
+	Prefix string
+	Flags  int
+}
+
+type internalOptions struct {
+	writer   io.Writer
+	color    int
+	prefix   string
+	flags    int
+	priority int
+}
+
 // Options provide basic options for tuning logging
 type Options struct {
 	Level LogLevel
-	Debug io.Writer
-	Info  io.Writer
-	Warn  io.Writer
-	Error io.Writer
-	Fatal io.Writer
+	Debug LoggerOptions
+	Info  LoggerOptions
+	Warn  LoggerOptions
+	Error LoggerOptions
+	Fatal LoggerOptions
 }
 
 func format(colorCode int, level LogLevel) string {
@@ -114,8 +139,53 @@ func NoColor() {
 	ErrorColor = 0
 }
 
-// Init initialize default loggers
-func Init(opts Options) {
+func getDefaultOptions() map[LogLevel]internalOptions {
+
+	return map[LogLevel]internalOptions{
+		DebugLevel: {
+			priority: 1,
+			color:    DebugColor,
+			writer:   os.Stdout,
+			prefix:   DefaultPrefix,
+			flags:    DefaultFlags,
+		},
+		InfoLevel: {
+			priority: 2,
+			color:    InfoColor,
+			writer:   os.Stdout,
+			prefix:   DefaultPrefix,
+			flags:    DefaultFlags,
+		},
+		WarnLevel: {
+			priority: 3,
+			color:    WarnColor,
+			writer:   os.Stdout,
+			prefix:   DefaultPrefix,
+			flags:    DefaultFlags,
+		},
+		ErrorLevel: {
+			priority: 4,
+			color:    ErrorColor,
+			writer:   os.Stderr,
+			prefix:   DefaultPrefix,
+			flags:    DefaultFlags,
+		},
+		FatalLevel: {
+			priority: 5,
+			color:    ErrorColor,
+			writer:   os.Stderr,
+			prefix:   DefaultPrefix,
+			flags:    DefaultFlags,
+		},
+	}
+}
+
+func createLoggers(opts Options) map[LogLevel]*Logger {
+
+	mutex.Lock()
+	defer mutex.Unlock()
+
+	loggers := make(map[LogLevel]*Logger)
 
 	if opts.Level == "" {
 		opts.Level = DefaultLogLevel
@@ -125,73 +195,85 @@ func Init(opts Options) {
 		NoColor()
 	}
 
-	type options struct {
-		priority      int
-		color         int
-		writer        io.Writer
-		defaultWriter io.Writer
+	optionsOverride := map[LogLevel]LoggerOptions{
+		DebugLevel: opts.Debug,
+		InfoLevel:  opts.Info,
+		WarnLevel:  opts.Warn,
+		ErrorLevel: opts.Error,
+		FatalLevel: opts.Fatal,
 	}
 
-	params := map[LogLevel]options{
-		DebugLevel: {
-			priority:      1,
-			color:         DebugColor,
-			writer:        opts.Debug,
-			defaultWriter: os.Stdout,
-		},
-		InfoLevel: {
-			priority:      2,
-			color:         InfoColor,
-			writer:        opts.Info,
-			defaultWriter: os.Stdout,
-		},
-		WarnLevel: {
-			priority:      3,
-			color:         WarnColor,
-			writer:        opts.Warn,
-			defaultWriter: os.Stdout,
-		},
-		ErrorLevel: {
-			priority:      4,
-			color:         ErrorColor,
-			writer:        opts.Error,
-			defaultWriter: os.Stderr,
-		},
-		FatalLevel: {
-			priority:      5,
-			color:         ErrorColor,
-			writer:        opts.Fatal,
-			defaultWriter: os.Stderr,
-		},
-	}
+	defaultOptions := getDefaultOptions()
 
-	lvlPriority := params[opts.Level].priority
+	lvlPriority := defaultOptions[opts.Level].priority
 
-	for lvl, cfg := range params {
-		loggers[lvl] = New(lvl, ioutil.Discard, "", log.LstdFlags)
-		if cfg.priority < lvlPriority {
+	for lvl, defaultOptions := range defaultOptions {
+		if defaultOptions.priority < lvlPriority {
+			loggers[lvl] = New(lvl, ioutil.Discard, "", log.LstdFlags)
 			continue
 		}
-		writer := cfg.writer
+		override := optionsOverride[lvl]
+		writer := override.Writer
+		color := override.Color
+		prefix := override.Prefix
+		flags := override.Flags
+
 		if writer == nil {
-			writer = cfg.defaultWriter
+			writer = defaultOptions.writer
 		}
-		loggers[lvl] = New(lvl, writer, fmt.Sprintf("[%v] ", format(cfg.color, lvl)), log.LstdFlags)
+		if color == 0 {
+			color = defaultOptions.color
+		}
+		if prefix == "" {
+			prefix = defaultOptions.prefix
+		}
+		if flags == 0 {
+			flags = defaultOptions.flags
+		}
+
+		loggers[lvl] = New(lvl, writer, fmt.Sprintf(prefix, format(color, lvl)), flags)
 	}
 
-	DEBUG = loggers[DebugLevel]
-	INFO = loggers[InfoLevel]
-	WARN = loggers[WarnLevel]
-	ERROR = loggers[ErrorLevel]
-	FATAL = loggers[FatalLevel]
+	return loggers
+}
+
+// Init initialize default loggers
+func Init(opts Options) {
+	loggers = createLoggers(opts)
+}
+
+func getLogger(lvl LogLevel) *Logger {
+	mutex.Lock()
+	defer mutex.Unlock()
+	return loggers[lvl]
 }
 
 // Log logs arguments
 func Log(lvl LogLevel, args ...interface{}) {
-	loggers[lvl].Println(args...)
+	getLogger(lvl).Println(args...)
 }
 
 // Logf logs arguments with formatting
 func Logf(lvl LogLevel, msg string, args ...interface{}) {
-	loggers[lvl].Printf(msg, args...)
+	getLogger(lvl).Printf(msg, args...)
+}
+
+func Debug() *Logger {
+	return getLogger(DebugLevel)
+}
+
+func Info() *Logger {
+	return getLogger(InfoLevel)
+}
+
+func Warn() *Logger {
+	return getLogger(WarnLevel)
+}
+
+func Error() *Logger {
+	return getLogger(ErrorLevel)
+}
+
+func Fatal() *Logger {
+	return getLogger(FatalLevel)
 }

@@ -5,6 +5,10 @@ import (
 	"testing"
 )
 
+func TestDefaults(t *testing.T) {
+	Error().Println("test success")
+}
+
 func TestLogPriority(t *testing.T) {
 
 	mockDebugWriter := bytes.NewBuffer([]byte{})
@@ -12,15 +16,15 @@ func TestLogPriority(t *testing.T) {
 
 	Init(Options{
 		Level: InfoLevel,
-		Debug: mockDebugWriter,
-		Info:  mockInfoWriter,
+		Debug: LoggerOptions{Writer: mockDebugWriter},
+		Info:  LoggerOptions{Writer: mockInfoWriter},
 	})
 
-	INFO.Println("info")
+	Info().Println("info")
 	if mockInfoWriter.String() == "" {
 		t.Errorf("info logger don't wrote logged message, but should")
 	}
-	DEBUG.Println("debug")
+	Debug().Println("debug")
 	if mockDebugWriter.String() != "" {
 		t.Errorf("debug logger wrote message, but should not")
 	}
