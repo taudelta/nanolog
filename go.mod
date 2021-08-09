@@ -1,3 +1,3 @@
-module github.com/stanyx/nanolog
+module github.com/taudelta/nanolog
 
 go 1.13
