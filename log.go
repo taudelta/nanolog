@@ -265,3 +265,32 @@ func Error() *Logger {
 func Fatal() *Logger {
 	return getLogger(FatalLevel)
 }
+
+type NanoLogger struct {
+}
+
+func (l *NanoLogger) Debug() *Logger {
+	return Debug()
+}
+
+func (l *NanoLogger) Info() *Logger {
+	return Info()
+}
+
+func (l *NanoLogger) Warn() *Logger {
+	return Warn()
+}
+
+func (l *NanoLogger) Error() *Logger {
+	return Error()
+}
+
+func (l *NanoLogger) Fatal() *Logger {
+	return Fatal()
+}
+
+var std = &NanoLogger{}
+
+func DefaultLogger() *NanoLogger {
+	return std
+}
